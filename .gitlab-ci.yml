@@ -1,0 +1,24 @@
+# Runs when this project is mirrored to GitLab. Set CONVISO_API_KEY and
+# CONVISO_COMPANY_ID as masked CI/CD variables on the GitLab project.
+
+stages:
+  - scan
+  - release
+
+include:
+  - local: templates/ast.yml
+    inputs:
+      company_id: $CONVISO_COMPANY_ID
+      dry_run: true
+      stage: scan
+
+create-release:
+  stage: release
+  image: registry.gitlab.com/gitlab-org/release-cli:latest
+  rules:
+    - if: $CI_COMMIT_TAG
+  script:
+    - echo "Releasing $CI_COMMIT_TAG"
+  release:
+    tag_name: $CI_COMMIT_TAG
+    description: "Release $CI_COMMIT_TAG of gitlab-ast-component"

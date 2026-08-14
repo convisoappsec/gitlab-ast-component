@@ -1,0 +1,134 @@
+spec:
+  description: >
+    Runs Conviso AST (SAST, SCA, IaC, SBOM, secret and container scanning)
+    and sends findings to Conviso Platform.
+  inputs:
+    company_id:
+      description: Company ID in Conviso Platform.
+    stage:
+      default: test
+      description: Pipeline stage for the scan job.
+    job_name:
+      default: conviso-ast
+      description: Job name. Change it if you include this component more than once.
+    base_url:
+      default: https://app.convisoappsec.com
+      description: Conviso Platform URL. Change only for a dedicated or on-premise instance.
+    asset_id:
+      default: ""
+      description: Pins the scan to one asset. Leave empty to resolve by repository URL.
+    scan_types:
+      default: ""
+      description: >
+        Comma-separated scanners to run: sast, sca, iac, sbom, secret, container.
+        Empty runs all of them. container is skipped without image_name.
+    image_name:
+      default: ""
+      description: Image for the container scanner (e.g. myorg/app:$CI_COMMIT_SHA).
+    path:
+      default: "."
+      description: Directory to scan, relative to the project checkout.
+    branch:
+      default: ""
+      description: >
+        Branch to associate the scan with. Leave empty and the CLI uses GitLab CI
+        variables (CI_COMMIT_REF_NAME / merge request source branch).
+    baseline_ref:
+      default: ""
+      description: >
+        Branch to diff against (e.g. main). Empty runs a full scan.
+    dry_run:
+      type: boolean
+      default: false
+      description: Run scanners without writing anything to Conviso Platform.
+    image_repository:
+      default: convisoappsec/convisoast_v2
+      description: Conviso AST image repository. Point at a mirror if needed.
+    image_tag:
+      default: latest
+      description: Conviso AST image tag. Pin for reproducible builds.
+
+---
+
+"$[[ inputs.job_name ]]":
+  stage: $[[ inputs.stage ]]
+  image:
+    name: $[[ inputs.image_repository ]]:$[[ inputs.image_tag ]]
+    entrypoint: [""]
+  variables:
+    GIT_DEPTH: "0"
+    CONVISO_COMPANY_ID: "$[[ inputs.company_id ]]"
+    CONVISO_BASE_URL: "$[[ inputs.base_url ]]"
+    CONVISO_AST_ASSET_ID: "$[[ inputs.asset_id ]]"
+    CONVISO_AST_BRANCH: "$[[ inputs.branch ]]"
+    CONVISO_AST_BASELINE_REF: "$[[ inputs.baseline_ref ]]"
+    CONVISO_AST_SCAN_TYPES: "$[[ inputs.scan_types ]]"
+    CONVISO_AST_IMAGE_NAME: "$[[ inputs.image_name ]]"
+    CONVISO_AST_PATH: "$[[ inputs.path ]]"
+    CONVISO_AST_DRY_RUN: "$[[ inputs.dry_run ]]"
+  script:
+    - |
+      set -eu
+
+      if [ -z "${CONVISO_APIKEY:-}" ]; then
+        if [ -n "${CONVISO_API_KEY:-}" ]; then
+          export CONVISO_APIKEY="$CONVISO_API_KEY"
+        else
+          echo "CONVISO_API_KEY is not set. Add it as a masked CI/CD variable."
+          exit 1
+        fi
+      fi
+
+      if [ -z "${CONVISO_COMPANY_ID:-}" ]; then
+        echo "company_id is required."
+        exit 1
+      fi
+
+      if [ -n "${CONVISO_AST_ASSET_ID:-}" ]; then
+        export CONVISO_ASSET_ID="$CONVISO_AST_ASSET_ID"
+      fi
+
+      if [ -n "${CONVISO_AST_BRANCH:-}" ]; then
+        export CONVISO_BRANCH="$CONVISO_AST_BRANCH"
+      fi
+
+      if [ -n "${CONVISO_AST_BASELINE_REF:-}" ]; then
+        ref="${CONVISO_AST_BASELINE_REF#refs/heads/}"
+        case "$ref" in
+          origin/*) export BASELINE_REF="$ref" ;;
+          *) export BASELINE_REF="origin/$ref" ;;
+        esac
+      fi
+
+      output="$CI_PROJECT_DIR/conviso-ast-session.zip"
+      set -- -p "$CONVISO_AST_PATH" -o "$output" -d
+
+      if [ -n "${CONVISO_AST_SCAN_TYPES:-}" ]; then
+        old_ifs=$IFS
+        IFS=,
+        for raw in $CONVISO_AST_SCAN_TYPES; do
+          t=$(printf '%s' "$raw" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')
+          [ -z "$t" ] && continue
+          if [ "$t" = "container" ] && [ -z "${CONVISO_AST_IMAGE_NAME:-}" ]; then
+            echo "Skipping container scan: image_name is empty."
+            continue
+          fi
+          set -- "$@" -s "$t"
+        done
+        IFS=$old_ifs
+      fi
+
+      if [ -n "${CONVISO_AST_IMAGE_NAME:-}" ]; then
+        set -- "$@" -i "$CONVISO_AST_IMAGE_NAME"
+      fi
+
+      if [ "$CONVISO_AST_DRY_RUN" = "true" ]; then
+        set -- "$@" --dry-run
+      fi
+
+      conviso-ast "$@"
+  artifacts:
+    when: always
+    paths:
+      - conviso-ast-session.zip
+    expire_in: 1 week
