@@ -1,0 +1,32 @@
+name: Mirror to GitLab
+
+on:
+  push:
+    branches: [main]
+    tags: ["*"]
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Push to GitLab
+        env:
+          GITLAB_TOKEN: ${{ secrets.GITLAB_TOKEN }}
+        run: |
+          set -eu
+          if [ -z "${GITLAB_TOKEN:-}" ]; then
+            echo "GITLAB_TOKEN is not set. Add a GitLab Project Access Token as a GitHub Actions secret."
+            exit 1
+          fi
+
+          git remote add gitlab "https://oauth2:${GITLAB_TOKEN}@gitlab.com/convisoappsec/gitlab-ast-component.git"
+
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            git push gitlab "refs/tags/${GITHUB_REF_NAME}:refs/tags/${GITHUB_REF_NAME}"
+          else
+            git push --force gitlab "HEAD:refs/heads/${GITHUB_REF_NAME}"
+          fi
