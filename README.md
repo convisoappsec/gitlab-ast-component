@@ -75,20 +75,23 @@ include:
 
 ## GitHub and GitLab
 
-Developers push here on GitHub. GitLab CI/CD components are addressed as
-`gitlab.com/<group>/<project>/ast@version`, so a GitLab.com project with the
-same content is required for `include: component`.
+Developers push and tag **here on GitHub**. GitLab CI/CD components are addressed
+as `gitlab.com/<group>/<project>/ast@version`, so a public GitLab.com copy is
+required. GitLab pull-mirroring is Premium; this repo uses a GitHub Action
+(`.github/workflows/mirror-to-gitlab.yml`) that pushes `main` and tags to GitLab.
 
-Recommended setup:
+A semver tag on GitHub (`1.0.0`) is mirrored, then GitLab CI creates a **Release**
+from that tag — that is what makes the component show up in the
+[CI/CD Catalog](https://gitlab.com/explore/catalog).
+
+Setup:
 
 1. This repository on GitHub (`convisoappsec/gitlab-ast-component`).
-2. A public GitLab.com project that **pull-mirrors** it.
-3. On the GitLab project: enable **CI/CD Catalog resource**, set `CONVISO_API_KEY`
-   and `CONVISO_COMPANY_ID` as CI/CD variables, push a semver tag (`1.0.0`).
-
-Until the mirror exists, you can still review `templates/ast.yml` in this repo.
-`include: remote` from GitHub raw YAML is a test shortcut only — it has no
-`inputs:` and is not the Catalog listing.
+2. Public GitLab.com project `convisoappsec/gitlab-ast-component` with
+   **CI/CD Catalog resource** enabled.
+3. GitLab **Project Access Token** (`write_repository`) stored as the GitHub
+   Actions secret `GITLAB_TOKEN`.
+4. Tag on GitHub: `git tag 1.0.0 && git push origin 1.0.0`.
 
 ## What this is not
 
